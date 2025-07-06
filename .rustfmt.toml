@@ -1,0 +1,17 @@
+# SPDX-FileCopyrightText: 2025 Legiayayana
+#
+# SPDX-License-Identifier: EUPL-1.2
+
+edition = "2024"
+max_width = 140
+struct_lit_width = 0
+use_small_heuristics = "Max"
+hard_tabs = true
+
+reorder_imports = true
+reorder_modules = true
+# normalize_comments = true
+# normalize_doc_attributes = true
+newline_style = "Unix"
+# hex_literal_case = "Lower"
+# group_imports = "StdExternalCrate"
