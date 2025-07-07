@@ -1,12 +1,8 @@
 #[cfg(target_os = "windows")]
-use crate::tera::ServerList;
-#[cfg(target_os = "windows")]
-use crate::tera::server_list::ServerInfo;
+use crate::serverlist::*;
 
 #[cfg(target_os = "windows")]
 use prost::Message;
-#[cfg(target_os = "windows")]
-use serde_json::Value;
 
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
@@ -19,7 +15,7 @@ use std::fs::File;
 use std::io::{Read, Write, stdin, stdout};
 use std::path::{Path, PathBuf};
 
-#[derive(Deserialize, Serialize)]
+#[derive(Hash, PartialEq, Eq, Clone, Debug, Deserialize, Serialize)]
 pub struct Config {
 	pub update: String,
 	pub login: String,
@@ -34,6 +30,27 @@ impl Config {
 			world: "".to_string(),
 		}
 	}
+}
+
+#[derive(Hash, PartialEq, Eq, Clone, Debug, Deserialize, Serialize)]
+struct ServerListJSON {
+	pub sort_criterion: Option<u32>,
+	pub servers: Vec<ServerInfoJSON>,
+}
+
+#[derive(Hash, PartialEq, Eq, Clone, Debug, Deserialize, Serialize)]
+struct ServerInfoJSON {
+	pub id: u32,
+	pub name: String,
+	pub category: String,
+	pub title: String,
+	pub queue: String,
+	pub population: Option<String>,
+	pub address: Option<String>,
+	pub port: u32,
+	pub available: u32,
+	pub unavailable_message: String,
+	pub host: Option<String>,
 }
 
 #[derive(Hash, PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
@@ -135,93 +152,31 @@ pub fn load_auth_from_disk() -> Result<LoginResponse> {
 }
 
 #[cfg(target_os = "windows")]
-fn parse_server_list_json(json: &Value) -> Result<ServerList> {
+fn parse_server_list_json(server_json: &ServerListJSON) -> Result<ServerList> {
 	let mut server_list = ServerList {
 		servers: vec![],
-		last_server_id: 0,
-		sort_criterion: 2,
+		last_server_id: 2800,
+		sort_criterion: server_json.sort_criterion.unwrap_or(3),
 	};
 
-	let credentials = load_auth_from_disk()?.auth_key;
-	println!("Raw credentials string: {}", credentials);
-
-	let parts: Vec<&str> = credentials.split('|').collect();
-
-	let player_last_server = parts.first().unwrap_or(&"0");
-	let player_last_server_id =
-		if parts.len() > 1 && !parts[1].is_empty() { parts[1].split(',').next().unwrap_or("0").parse::<u32>().unwrap_or(0) } else { 2800 };
-
-	// Parse character counts for each server
-	let character_counts: HashMap<u32, u32> = if parts.len() > 1 {
-		parts[1]
-			.split(',')
-			.collect::<Vec<&str>>()
-			.chunks(2)
-			.filter_map(|chunk| if chunk.len() == 2 { Some((chunk[0].parse::<u32>().ok()?, chunk[1].parse::<u32>().ok()?)) } else { None })
-			.collect()
-	} else {
-		HashMap::new()
-	};
-
-	println!(
-		"Parsed values - Last server: {}, Last server ID: {}, Character counts: {:?}",
-		player_last_server, player_last_server_id, character_counts
-	);
-
-	let servers = json["servers"].as_array().unwrap_or(&vec![]).clone();
-	for server in servers {
-		let server_id = server["id"].as_u64().expect("need an id") as u32;
-		let character_count = character_counts.get(&server_id).cloned().unwrap_or(0);
-
-		let json_available = server["available"].as_u64().unwrap_or(0);
-
-		println!("Processing server: id={}, name={}, json_available={}", server_id, server["name"], json_available);
-
-		let display_count = format!("({})", character_count);
-		let name = format!("{}{}", server["name"].as_str().expect("Missing or invalid 'name' field"), display_count);
-		let title = format!("{}{}", server["title"].as_str().expect("Missing or invalid 'title' field"), display_count);
-
-		println!("Formatted server name: {}", name);
-
-		// Modify population field based on 'available' in JSON
-		let population = if json_available == 0 {
-			"<b><font color=\"#FF0000\">Offline</font></b>".to_string()
-		} else {
-			server["population"].as_str().expect("Missing or invalid 'population' field").to_string()
-		};
-
-		// Handle address and host fields
-		let address_str = server["address"].as_str();
-		let host_str = server["host"].as_str();
-
-		let (address, host) = match (address_str, host_str) {
-			(Some(addr), Some(_)) => {
-				// If both are present, use address and ignore host
-				(ipv4_to_u32(addr), Vec::new())
-			}
-			(Some(addr), None) => (ipv4_to_u32(addr), Vec::new()),
-			(None, Some(h)) => (0, utf16_to_bytes(h)),
-			(None, None) => panic!("Either 'address' or 'host' must be set"),
-		};
-
+	for server in &server_json.servers {
+		let name = format!("{}(0)", server.name);
+		let title = format!("{}(0)", server.title);
 		let server_info = ServerInfo {
-			id: server_id,
+			id: server.id,
 			name: utf16_to_bytes(&name),
-			category: utf16_to_bytes(server["category"].as_str().expect("Missing or invalid 'category' field")),
+			category: utf16_to_bytes(&server.category),
 			title: utf16_to_bytes(&title),
-			queue: utf16_to_bytes(server["queue"].as_str().expect("Missing or invalid 'queue' field")),
-			population: utf16_to_bytes(&population),
-			address,
-			port: server["port"].as_u64().expect("Missing or invalid 'port' field") as u32,
-			available: 1,
-			unavailable_message: utf16_to_bytes(server["unavailable_message"].as_str().unwrap_or("")),
-			host,
+			queue: utf16_to_bytes(&server.queue),
+			population: utf16_to_bytes(&server.population.clone().unwrap_or("<b><font color=\"#FF0000\">Offline</font></b>".parse()?)),
+			address: ipv4_to_u32(server.address.clone()),
+			port: server.port,
+			available: server.available,
+			unavailable_message: utf16_to_bytes(&server.unavailable_message),
+			host: if server.address.is_some() { vec![] } else { utf16_to_bytes_opt(server.host.clone()) },
 		};
 		server_list.servers.push(server_info);
 	}
-
-	server_list.last_server_id = player_last_server_id;
-	server_list.sort_criterion = json["sort_criterion"].as_u64().unwrap_or(3) as u32;
 
 	Ok(server_list)
 }
@@ -232,7 +187,7 @@ pub fn load_server_from_disk() -> Result<Vec<u8>> {
 	let mut file = File::open(cache_path)?;
 	let mut contents = String::new();
 	file.read_to_string(&mut contents)?;
-	let json: Value = serde_json::from_str(&contents)?;
+	let json: ServerListJSON = serde_json::from_str(&contents)?;
 	let server_list = parse_server_list_json(&json)?;
 	let mut buf = Vec::new();
 	server_list.encode(&mut buf)?;
@@ -264,11 +219,28 @@ pub(crate) fn calculate_file_hash<P: AsRef<Path>>(path: P) -> Result<String> {
 }
 
 #[cfg(target_os = "windows")]
-fn ipv4_to_u32(ip: &str) -> u32 {
-	ip.parse::<std::net::Ipv4Addr>().map(|addr| u32::from_be_bytes(addr.octets())).unwrap_or(0)
+fn ipv4_to_u32(ip: Option<String>) -> u32 {
+	if ip.is_none() {
+		return 0;
+	}
+
+	ip.unwrap().parse::<std::net::Ipv4Addr>().map(|addr| u32::from_be_bytes(addr.octets())).unwrap_or(0)
 }
 
 #[cfg(target_os = "windows")]
-fn utf16_to_bytes(s: &str) -> Vec<u8> {
-	s.encode_utf16().flat_map(|c| c.to_le_bytes().to_vec()).collect()
+fn utf16_to_bytes(s: &String) -> Vec<u8> {
+	if s.is_empty() {
+		return vec![];
+	}
+
+	s.as_str().encode_utf16().flat_map(|c| c.to_le_bytes().to_vec()).collect()
+}
+
+#[cfg(target_os = "windows")]
+fn utf16_to_bytes_opt(s: Option<String>) -> Vec<u8> {
+	if s.is_none() {
+		return vec![];
+	}
+
+	s.unwrap().as_str().encode_utf16().flat_map(|c| c.to_le_bytes().to_vec()).collect()
 }

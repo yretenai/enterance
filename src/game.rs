@@ -12,8 +12,9 @@ use winapi::um::winuser::{
 	GetMessageW, PostQuitMessage, RegisterClassExW, SendMessageW, TranslateMessage, UnregisterClassW, WM_COPYDATA, WNDCLASSEXW,
 };
 
+use bytemuck::{ByteEq, ByteHash, Pod, Zeroable, try_cast_slice};
 use std::ffi::OsStr;
-use std::fs::File;
+use std::fs::{File, remove_file};
 use std::io::Write;
 use std::os::windows::ffi::OsStrExt;
 use std::path::PathBuf;
@@ -32,7 +33,7 @@ pub async fn launch(exe_path: PathBuf) -> Result<i32> {
 	let mut file = File::create(server_path)?;
 	file.write_all(res.bytes().await?.as_ref())?;
 
-	tokio::task::spawn_blocking(move || unsafe { create_and_run_game_window() });
+	tokio::task::spawn_blocking(move || create_and_run_game_window());
 
 	let mut child = Command::new(exe_path).arg("-LANGUAGEEXT=EUR".to_string()).spawn()?;
 
@@ -49,51 +50,51 @@ fn to_wstring(s: &str) -> Vec<u16> {
 	OsStr::new(s).encode_wide().chain(Some(0)).collect()
 }
 
-#[derive(Hash, PartialEq, Eq, Ord, PartialOrd, Debug, Copy, Clone)]
 #[repr(usize)]
+#[derive(Hash, PartialEq, Eq, Ord, PartialOrd, Debug, Copy, Clone)]
 enum S1Event {
-	AccountNameRequest = 0x1,
-	AccountNameResponse = 0x2,
-	SessionTicketRequest = 0x3,
-	SessionTicketResponse = 0x4,
-	ServerListRequest = 0x5,
-	ServerListResponse = 0x6,
-	EnterLobbyOrWorldNotification = 0x7,
-	CreateRoomRequest = 0x8,
-	CreateRoomResponse = 0x9,
-	JoinRoomRequest = 0xa,
-	JoinRoomResponse = 0xb,
-	LeaveRoomRequest = 0xc,
-	LeaveRoomResponse = 0xd,
-	SetVolumeCommand = 0x13,
-	SetMicrophoneCommand = 0x14,
-	SilenceUserCommand = 0x15,
-	OpenWebsiteCommand = 0x19,
-	WebUrlRequest = 0x1a,
-	WebUrlResponse = 0x1b,
-	GameStartNotification = 0x3e8,
-	EnteredIntoCinematicNotification = 0x3e9,
-	EnteredServerListNotification = 0x3ea,
-	EnteringLobbyNotification = 0x3eb,
-	EnteredLobbyNotification = 0x3ec,
-	EnteringCharacterCreationNotification = 0x3ed,
-	LeftLobbyNotification = 0x3ee,
-	DeletedCharacterNotification = 0x3ef,
-	CanceledCharacterCreationNotification = 0x3f0,
-	EnteredCharacterCreationNotification = 0x3f1,
-	CreatedCharacterNotification = 0x3f2,
-	EnteredWorldNotification = 0x3f3,
-	FinishedLoadingScreenNotification = 0x3f4,
-	LeftWorldNotification = 0x3f5,
-	MountedPegasusNotification = 0x3f6,
-	DismountedPegasusNotification = 0x3f7,
-	ChangedChannelNotification = 0x3f8,
-	GameExitNotification = 0x3fc,
-	GameCrashNotification = 0x3fd,
-	AntiCheatStartingNotification = 0x3fe,
-	AntiCheatStartedNotification = 0x3ff,
-	AntiCheatErrorNotification = 0x400,
-	OpenSupportWebsiteCommand = 0x401,
+	AccountNameRequest = 1,
+	AccountNameResponse = 2,
+	SessionTicketRequest = 3,
+	SessionTicketResponse = 4,
+	ServerListRequest = 5,
+	ServerListResponse = 6,
+	EnterLobbyOrWorld = 7,
+	CreateRoomRequest = 8,
+	CreateRoomResponse = 9,
+	JoinRoomRequest = 10,
+	JoinRoomResponse = 11,
+	LeaveRoomRequest = 12,
+	LeaveRoomResponse = 13,
+	SetVolumeCommand = 19,
+	SetMicrophoneCommand = 20,
+	SilenceUserCommand = 21,
+	OpenWebsiteCommand = 25,
+	WebUrlRequest = 26,
+	WebUrlResponse = 27,
+	GameStart = 1000,
+	EnteredIntoCinematic = 1001,
+	EnteredServerList = 1002,
+	EnteringLobby = 1003,
+	EnteredLobby = 1004,
+	EnteringCharacterCreation = 1005,
+	LeftLobby = 1006,
+	DeletedCharacter = 1007,
+	CanceledCharacterCreation = 1008,
+	EnteredCharacterCreation = 1009,
+	CreatedCharacter = 1010,
+	EnteredWorld = 1011,
+	FinishedLoadingScreen = 1012,
+	LeftWorld = 1013,
+	MountedPegasus = 1014,
+	DismountedPegasus = 1015,
+	ChangedChannel = 1016,
+	GameExit = 1020,
+	GameCrash = 1021,
+	AntiCheatStarting = 1022,
+	AntiCheatStarted = 1023,
+	AntiCheatError = 1024,
+	OpenSupportWebsiteCommand = 1025,
 	Other(usize),
 }
 
@@ -101,48 +102,48 @@ impl Into<usize> for S1Event {
 	fn into(self) -> usize {
 		match self {
 			S1Event::Other(i) => i,
-			S1Event::AccountNameRequest => 0x1,
-			S1Event::AccountNameResponse => 0x2,
-			S1Event::SessionTicketRequest => 0x3,
-			S1Event::SessionTicketResponse => 0x4,
-			S1Event::ServerListRequest => 0x5,
-			S1Event::ServerListResponse => 0x6,
-			S1Event::EnterLobbyOrWorldNotification => 0x7,
-			S1Event::CreateRoomRequest => 0x8,
-			S1Event::CreateRoomResponse => 0x9,
-			S1Event::JoinRoomRequest => 0xa,
-			S1Event::JoinRoomResponse => 0xb,
-			S1Event::LeaveRoomRequest => 0xc,
-			S1Event::LeaveRoomResponse => 0xd,
-			S1Event::SetVolumeCommand => 0x13,
-			S1Event::SetMicrophoneCommand => 0x14,
-			S1Event::SilenceUserCommand => 0x15,
-			S1Event::OpenWebsiteCommand => 0x19,
-			S1Event::WebUrlRequest => 0x1a,
-			S1Event::WebUrlResponse => 0x1b,
-			S1Event::GameStartNotification => 0x3e8,
-			S1Event::EnteredIntoCinematicNotification => 0x3e9,
-			S1Event::EnteredServerListNotification => 0x3ea,
-			S1Event::EnteringLobbyNotification => 0x3eb,
-			S1Event::EnteredLobbyNotification => 0x3ec,
-			S1Event::EnteringCharacterCreationNotification => 0x3ed,
-			S1Event::LeftLobbyNotification => 0x3ee,
-			S1Event::DeletedCharacterNotification => 0x3ef,
-			S1Event::CanceledCharacterCreationNotification => 0x3f0,
-			S1Event::EnteredCharacterCreationNotification => 0x3f1,
-			S1Event::CreatedCharacterNotification => 0x3f2,
-			S1Event::EnteredWorldNotification => 0x3f3,
-			S1Event::FinishedLoadingScreenNotification => 0x3f4,
-			S1Event::LeftWorldNotification => 0x3f5,
-			S1Event::MountedPegasusNotification => 0x3f6,
-			S1Event::DismountedPegasusNotification => 0x3f7,
-			S1Event::ChangedChannelNotification => 0x3f8,
-			S1Event::GameExitNotification => 0x3fc,
-			S1Event::GameCrashNotification => 0x3fd,
-			S1Event::AntiCheatStartingNotification => 0x3fe,
-			S1Event::AntiCheatStartedNotification => 0x3ff,
-			S1Event::AntiCheatErrorNotification => 0x400,
-			S1Event::OpenSupportWebsiteCommand => 0x401,
+			S1Event::AccountNameRequest => 1,
+			S1Event::AccountNameResponse => 2,
+			S1Event::SessionTicketRequest => 3,
+			S1Event::SessionTicketResponse => 4,
+			S1Event::ServerListRequest => 5,
+			S1Event::ServerListResponse => 6,
+			S1Event::EnterLobbyOrWorld => 7,
+			S1Event::CreateRoomRequest => 8,
+			S1Event::CreateRoomResponse => 9,
+			S1Event::JoinRoomRequest => 10,
+			S1Event::JoinRoomResponse => 11,
+			S1Event::LeaveRoomRequest => 12,
+			S1Event::LeaveRoomResponse => 13,
+			S1Event::SetVolumeCommand => 19,
+			S1Event::SetMicrophoneCommand => 20,
+			S1Event::SilenceUserCommand => 21,
+			S1Event::OpenWebsiteCommand => 25,
+			S1Event::WebUrlRequest => 26,
+			S1Event::WebUrlResponse => 27,
+			S1Event::GameStart => 1000,
+			S1Event::EnteredIntoCinematic => 1001,
+			S1Event::EnteredServerList => 1002,
+			S1Event::EnteringLobby => 1003,
+			S1Event::EnteredLobby => 1004,
+			S1Event::EnteringCharacterCreation => 1005,
+			S1Event::LeftLobby => 1006,
+			S1Event::DeletedCharacter => 1007,
+			S1Event::CanceledCharacterCreation => 1008,
+			S1Event::EnteredCharacterCreation => 1009,
+			S1Event::CreatedCharacter => 1010,
+			S1Event::EnteredWorld => 1011,
+			S1Event::FinishedLoadingScreen => 1012,
+			S1Event::LeftWorld => 1013,
+			S1Event::MountedPegasus => 1014,
+			S1Event::DismountedPegasus => 1015,
+			S1Event::ChangedChannel => 1016,
+			S1Event::GameExit => 1020,
+			S1Event::GameCrash => 1021,
+			S1Event::AntiCheatStarting => 1022,
+			S1Event::AntiCheatStarted => 1023,
+			S1Event::AntiCheatError => 1024,
+			S1Event::OpenSupportWebsiteCommand => 1025,
 		}
 	}
 }
@@ -150,49 +151,84 @@ impl Into<usize> for S1Event {
 impl Into<S1Event> for usize {
 	fn into(self) -> S1Event {
 		match self {
-			0x1 => S1Event::AccountNameRequest,
-			0x2 => S1Event::AccountNameResponse,
-			0x3 => S1Event::SessionTicketRequest,
-			0x4 => S1Event::SessionTicketResponse,
-			0x5 => S1Event::ServerListRequest,
-			0x6 => S1Event::ServerListResponse,
-			0x7 => S1Event::EnterLobbyOrWorldNotification,
-			0x8 => S1Event::CreateRoomRequest,
-			0x9 => S1Event::CreateRoomResponse,
-			0xa => S1Event::JoinRoomRequest,
-			0xb => S1Event::JoinRoomResponse,
-			0xc => S1Event::LeaveRoomRequest,
-			0xd => S1Event::LeaveRoomResponse,
-			0x13 => S1Event::SetVolumeCommand,
-			0x14 => S1Event::SetMicrophoneCommand,
-			0x15 => S1Event::SilenceUserCommand,
-			0x19 => S1Event::OpenWebsiteCommand,
-			0x1a => S1Event::WebUrlRequest,
-			0x1b => S1Event::WebUrlResponse,
-			0x3e8 => S1Event::GameStartNotification,
-			0x3e9 => S1Event::EnteredIntoCinematicNotification,
-			0x3ea => S1Event::EnteredServerListNotification,
-			0x3eb => S1Event::EnteringLobbyNotification,
-			0x3ec => S1Event::EnteredLobbyNotification,
-			0x3ed => S1Event::EnteringCharacterCreationNotification,
-			0x3ee => S1Event::LeftLobbyNotification,
-			0x3ef => S1Event::DeletedCharacterNotification,
-			0x3f0 => S1Event::CanceledCharacterCreationNotification,
-			0x3f1 => S1Event::EnteredCharacterCreationNotification,
-			0x3f2 => S1Event::CreatedCharacterNotification,
-			0x3f3 => S1Event::EnteredWorldNotification,
-			0x3f4 => S1Event::FinishedLoadingScreenNotification,
-			0x3f5 => S1Event::LeftWorldNotification,
-			0x3f6 => S1Event::MountedPegasusNotification,
-			0x3f7 => S1Event::DismountedPegasusNotification,
-			0x3f8 => S1Event::ChangedChannelNotification,
-			0x3fc => S1Event::GameExitNotification,
-			0x3fd => S1Event::GameCrashNotification,
-			0x3fe => S1Event::AntiCheatStartingNotification,
-			0x3ff => S1Event::AntiCheatStartedNotification,
-			0x400 => S1Event::AntiCheatErrorNotification,
-			0x401 => S1Event::OpenSupportWebsiteCommand,
+			1 => S1Event::AccountNameRequest,
+			2 => S1Event::AccountNameResponse,
+			3 => S1Event::SessionTicketRequest,
+			4 => S1Event::SessionTicketResponse,
+			5 => S1Event::ServerListRequest,
+			6 => S1Event::ServerListResponse,
+			7 => S1Event::EnterLobbyOrWorld,
+			8 => S1Event::CreateRoomRequest,
+			9 => S1Event::CreateRoomResponse,
+			10 => S1Event::JoinRoomRequest,
+			11 => S1Event::JoinRoomResponse,
+			12 => S1Event::LeaveRoomRequest,
+			13 => S1Event::LeaveRoomResponse,
+			19 => S1Event::SetVolumeCommand,
+			20 => S1Event::SetMicrophoneCommand,
+			21 => S1Event::SilenceUserCommand,
+			25 => S1Event::OpenWebsiteCommand,
+			26 => S1Event::WebUrlRequest,
+			27 => S1Event::WebUrlResponse,
+			1000 => S1Event::GameStart,
+			1001 => S1Event::EnteredIntoCinematic,
+			1002 => S1Event::EnteredServerList,
+			1003 => S1Event::EnteringLobby,
+			1004 => S1Event::EnteredLobby,
+			1005 => S1Event::EnteringCharacterCreation,
+			1006 => S1Event::LeftLobby,
+			1007 => S1Event::DeletedCharacter,
+			1008 => S1Event::CanceledCharacterCreation,
+			1009 => S1Event::EnteredCharacterCreation,
+			1010 => S1Event::CreatedCharacter,
+			1011 => S1Event::EnteredWorld,
+			1012 => S1Event::FinishedLoadingScreen,
+			1013 => S1Event::LeftWorld,
+			1014 => S1Event::MountedPegasus,
+			1015 => S1Event::DismountedPegasus,
+			1016 => S1Event::ChangedChannel,
+			1020 => S1Event::GameExit,
+			1021 => S1Event::GameCrash,
+			1022 => S1Event::AntiCheatStarting,
+			1023 => S1Event::AntiCheatStarted,
+			1024 => S1Event::AntiCheatError,
+			1025 => S1Event::OpenSupportWebsiteCommand,
 			_ => S1Event::Other(self),
+		}
+	}
+}
+
+#[repr(u16)]
+#[derive(Hash, PartialEq, Eq, Ord, PartialOrd, Debug, Copy, Clone)]
+enum S1ExitReason {
+	Success = 0,
+	Manual = 16,
+	InvalidSession = 257,
+	AlreadyOnline = 262,
+	Other(u16),
+}
+
+#[derive(Copy, Clone, Pod, Zeroable, ByteEq, ByteHash)]
+#[repr(C)]
+pub struct S1ExitMessage {
+	#[bytemuck]
+	pub len: u32,
+	#[bytemuck]
+	pub code: u32,
+	#[bytemuck]
+	pub reason: u16,
+	#[bytemuck]
+	pub reason_msg_id: u16,
+}
+
+impl Into<S1ExitReason> for u16 {
+	fn into(self) -> S1ExitReason {
+		match self {
+			0 => S1ExitReason::Success,
+			16 => S1ExitReason::Manual,
+			257 => S1ExitReason::InvalidSession,
+			262 => S1ExitReason::AlreadyOnline,
+			_ => S1ExitReason::Other(self),
 		}
 	}
 }
@@ -200,54 +236,81 @@ impl Into<S1Event> for usize {
 unsafe extern "system" fn wnd_proc(h_wnd: HWND, msg: UINT, w_param: WPARAM, l_param: LPARAM) -> LRESULT {
 	match msg {
 		WM_COPYDATA => {
-			unsafe {
-				let copy_data = &*(l_param as *const COPYDATASTRUCT);
-				let event_id: S1Event = copy_data.dwData.into();
-				let payload = if copy_data.cbData > 0 {
-					slice::from_raw_parts(copy_data.lpData as *const u8, copy_data.cbData as usize)
-				} else {
-					&[]
-				};
-				println!("RX Event: {:?} ({:?}), Payload: {:?}", event_id, copy_data.dwData, payload);
+			let copy_data = unsafe { &*(l_param as *const COPYDATASTRUCT) };
+			let event_id: S1Event = copy_data.dwData.into();
+			let payload = if copy_data.cbData > 0 {
+				unsafe { slice::from_raw_parts(copy_data.lpData as *const u8, copy_data.cbData as usize) }
+			} else {
+				&[]
+			};
+			println!("RX Event: {:?} ({:?}), Payload: {:02x?}", event_id, copy_data.dwData, payload);
 
-				match event_id {
-					S1Event::AccountNameRequest => handle_account_name_request(w_param, h_wnd),
-					S1Event::SessionTicketRequest => handle_session_ticket_request(w_param, h_wnd),
-					S1Event::ServerListRequest => handle_server_list_request(w_param, h_wnd),
-					S1Event::EnterLobbyOrWorldNotification => handle_enter_lobby_or_world(payload),
-					S1Event::GameExitNotification => PostQuitMessage(0),
-					S1Event::GameCrashNotification => PostQuitMessage(1),
-					_ => {}
-				}
-			}
+			match event_id {
+				S1Event::AccountNameRequest => handle_account_name_request(w_param, h_wnd),
+				S1Event::SessionTicketRequest => handle_session_ticket_request(w_param, h_wnd),
+				S1Event::ServerListRequest => handle_server_list_request(w_param, h_wnd),
+				S1Event::EnterLobbyOrWorld => handle_enter_lobby_or_world(payload),
+				S1Event::GameExit => handle_game_exit(payload).map_err(|e| eprintln!("{:?}", e)).unwrap_or(()),
+				S1Event::GameCrash => handle_game_crash(payload),
+				_ => {}
+			};
 			1
 		}
 		_ => unsafe { DefWindowProcW(h_wnd, msg, w_param, l_param) },
 	}
 }
 
-unsafe fn handle_account_name_request(recipient: WPARAM, sender: HWND) {
+fn handle_game_exit(payload: &[u8]) -> Result<()> {
+	if payload.len() < 0xc {
+		return Ok(());
+	}
+
+	let rsp: &S1ExitMessage = if let Ok(rsps) = try_cast_slice::<u8, S1ExitMessage>(payload)
+		&& let Some(rsp) = rsps.first()
+	{
+		rsp
+	} else {
+		return Ok(());
+	};
+	let reason: S1ExitReason = rsp.reason.into();
+	println!("exited! code: {:?}, reason: {:?}, msg: {:?}", rsp.code, reason, rsp.reason_msg_id);
+
+	match reason {
+		S1ExitReason::InvalidSession => {
+			println!("session is invalid, deleting auth file!");
+			remove_file(get_login_token_path()?)?;
+		}
+		_ => {}
+	}
+
+	unsafe { Ok(PostQuitMessage(rsp.code as i32)) }
+}
+
+fn handle_game_crash(payload: &[u8]) {
+	let mut u16vec: Vec<u16> = payload.chunks_exact(2).map(|c| u16::from_le_bytes(c.try_into().unwrap())).collect();
+	u16vec.pop_if(|last| *last == 0u16);
+	let crash_msg = String::from_utf16_lossy(u16vec.as_ref());
+	eprintln!("crashed!");
+	eprintln!("{}", crash_msg);
+	unsafe { PostQuitMessage(-1) }
+}
+
+fn handle_account_name_request(recipient: WPARAM, sender: HWND) {
 	let account_name = load_auth_from_disk().expect("Failed to load auth from disk").user_no;
 	println!("Account Name Request - Sending: {}", account_name);
 	let account_name_utf16: Vec<u8> = account_name.to_string().encode_utf16().flat_map(|c| c.to_le_bytes().to_vec()).collect();
-	unsafe {
-		send_response_message(recipient, sender, S1Event::AccountNameResponse, &account_name_utf16);
-	}
+	send_response_message(recipient, sender, S1Event::AccountNameResponse, &account_name_utf16);
 }
 
-unsafe fn handle_session_ticket_request(recipient: WPARAM, sender: HWND) {
+fn handle_session_ticket_request(recipient: WPARAM, sender: HWND) {
 	let session_ticket = load_auth_from_disk().expect("Failed to load auth from disk").auth_key;
 	println!("Session Ticket Request - Sending: {}", session_ticket);
-	unsafe {
-		send_response_message(recipient, sender, S1Event::SessionTicketResponse, &session_ticket.into_bytes());
-	}
+	send_response_message(recipient, sender, S1Event::SessionTicketResponse, &session_ticket.into_bytes());
 }
 
-unsafe fn handle_server_list_request(recipient: WPARAM, sender: HWND) {
+fn handle_server_list_request(recipient: WPARAM, sender: HWND) {
 	let server_list_data = load_server_from_disk().expect("Failed to get server list data");
-	unsafe {
-		send_response_message(recipient, sender, S1Event::ServerListResponse, &server_list_data);
-	}
+	send_response_message(recipient, sender, S1Event::ServerListResponse, &server_list_data);
 }
 
 fn handle_enter_lobby_or_world(payload: &[u8]) {
@@ -257,55 +320,53 @@ fn handle_enter_lobby_or_world(payload: &[u8]) {
 		let mut u16vec: Vec<u16> = payload.chunks_exact(2).map(|c| u16::from_le_bytes(c.try_into().unwrap())).collect();
 		u16vec.pop_if(|last| *last == 0u16);
 		let char_name = String::from_utf16_lossy(u16vec.as_ref());
-		println!("Entered world: Character \"{}\"", char_name);
+		println!("Entered world with character \"{}\"", char_name);
 	}
 }
 
-unsafe extern "system" fn enum_window_proc(hwnd: HWND, lparam: LPARAM) -> BOOL {
+extern "system" fn enum_window_proc(hwnd: HWND, lparam: LPARAM) -> BOOL {
 	let mut class_name: [u16; 256] = [0; 256];
-	unsafe {
-		let len = GetClassNameW(hwnd, class_name.as_mut_ptr(), 256) as usize;
-		let class_name = &class_name[..len];
+	let len = unsafe { GetClassNameW(hwnd, class_name.as_mut_ptr(), 256) as usize };
+	let class_name = &class_name[..len];
 
-		let search_class = slice::from_raw_parts(lparam as *const u16, 256);
-		let search_len = search_class.iter().position(|&c| c == 0).unwrap_or(256);
-		let search_class = &search_class[..search_len];
+	let search_class = unsafe { slice::from_raw_parts(lparam as *const u16, 256) };
+	let search_len = search_class.iter().position(|&c| c == 0).unwrap_or(256);
+	let search_class = &search_class[..search_len];
 
-		if class_name.starts_with(search_class) {
-			DestroyWindow(hwnd);
-		}
+	if class_name.starts_with(search_class) {
+		unsafe { DestroyWindow(hwnd) };
 	}
 	TRUE
 }
 
-unsafe fn create_and_run_game_window() {
+fn create_and_run_game_window() {
 	let launcher_class_name = "LAUNCHER_CLASS";
 	let launcher_window_title = "LAUNCHER_WINDOW";
 	let class_name = to_wstring(launcher_class_name);
 	let window_name = to_wstring(launcher_window_title);
-	unsafe {
-		let wnd_class = WNDCLASSEXW {
-			cbSize: size_of::<WNDCLASSEXW>() as u32,
-			style: 0,
-			lpfnWndProc: Some(wnd_proc),
-			cbClsExtra: 0,
-			cbWndExtra: 0,
-			hInstance: GetModuleHandleW(null_mut()),
-			hIcon: null_mut(),
-			hCursor: null_mut(),
-			hbrBackground: null_mut(),
-			lpszMenuName: null_mut(),
-			lpszClassName: class_name.as_ptr(),
-			hIconSm: null_mut(),
-		};
+	let wnd_class = WNDCLASSEXW {
+		cbSize: size_of::<WNDCLASSEXW>() as u32,
+		style: 0,
+		lpfnWndProc: Some(wnd_proc),
+		cbClsExtra: 0,
+		cbWndExtra: 0,
+		hInstance: unsafe { GetModuleHandleW(null_mut()) },
+		hIcon: null_mut(),
+		hCursor: null_mut(),
+		hbrBackground: null_mut(),
+		lpszMenuName: null_mut(),
+		lpszClassName: class_name.as_ptr(),
+		hIconSm: null_mut(),
+	};
 
-		let atom = RegisterClassExW(&wnd_class);
-		if atom == 0 {
-			eprintln!("Failed to register window class");
-			return;
-		}
+	let atom = unsafe { RegisterClassExW(&wnd_class) };
+	if atom == 0 {
+		eprintln!("Failed to register window class");
+		return;
+	}
 
-		let hwnd = CreateWindowExW(
+	let hwnd = unsafe {
+		CreateWindowExW(
 			0,
 			class_name.as_ptr(),
 			window_name.as_ptr(),
@@ -318,17 +379,21 @@ unsafe fn create_and_run_game_window() {
 			null_mut(),
 			GetModuleHandleW(null_mut()),
 			null_mut(),
-		);
+		)
+	};
 
-		if hwnd.is_null() {
-			eprintln!("Failed to create window");
+	if hwnd.is_null() {
+		eprintln!("Failed to create window");
+		unsafe {
 			UnregisterClassW(class_name.as_ptr(), GetModuleHandleW(null_mut()));
-			return;
 		}
+		return;
+	}
 
-		println!("Window created with HWND: {:?}", hwnd);
+	println!("Window created with HWND: {:?}", hwnd);
 
-		let mut msg = std::mem::zeroed();
+	let mut msg = unsafe { std::mem::zeroed() };
+	unsafe {
 		while GetMessageW(&mut msg, null_mut(), 0, 0) > 0 {
 			if msg.message == 0x401 {
 				break;
@@ -336,13 +401,13 @@ unsafe fn create_and_run_game_window() {
 			TranslateMessage(&msg);
 			DispatchMessageW(&msg);
 		}
-
 		DestroyWindow(hwnd);
 		UnregisterClassW(class_name.as_ptr(), GetModuleHandleW(null_mut()));
+	}
+	let mut wcex: WNDCLASSEXW = unsafe { std::mem::zeroed() };
+	wcex.cbSize = size_of::<WNDCLASSEXW>() as u32;
 
-		let mut wcex: WNDCLASSEXW = std::mem::zeroed();
-		wcex.cbSize = size_of::<WNDCLASSEXW>() as u32;
-
+	unsafe {
 		EnumWindows(Some(enum_window_proc), class_name.as_ptr() as LPARAM);
 
 		if GetClassInfoExW(GetModuleHandleW(null_mut()), class_name.as_ptr(), &mut wcex) != 0 {
@@ -351,9 +416,9 @@ unsafe fn create_and_run_game_window() {
 	}
 }
 
-unsafe fn send_response_message(recipient: WPARAM, sender: HWND, game_event: S1Event, payload: &[u8]) {
+fn send_response_message(recipient: WPARAM, sender: HWND, game_event: S1Event, payload: &[u8]) {
 	let op: usize = game_event.into();
-	println!("TX Event: {:?} ({:?}), Payload: {:?}", game_event, op, payload);
+	println!("TX Event: {:?} ({:?}), Payload: {:02x?}", game_event, op, payload);
 	let copy_data = COPYDATASTRUCT {
 		dwData: op,
 		cbData: payload.len() as u32,

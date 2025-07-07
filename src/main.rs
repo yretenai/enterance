@@ -1,7 +1,8 @@
 #[cfg(target_os = "windows")]
 mod game;
 #[cfg(target_os = "windows")]
-mod tera;
+mod serverlist;
+
 mod util;
 
 use crate::util::*;
