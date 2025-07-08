@@ -1,0 +1,36 @@
+name: Build
+on:
+  push:
+    branches: [ "develop" ]
+env:
+  CARGO_TERM_COLOR: always
+jobs:
+  build:
+    strategy:
+      matrix:
+        os: [ubuntu-latest,windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+    - uses: actions/checkout@v4
+    - name: Update rust
+      run: rustup update stable
+    - name: Use stable
+      run: rustup override set stable
+    - name: Version
+      run: rustup --version
+    - name: Build
+      run: cargo build --verbose --release
+    - name: Name
+      id: exe
+      run: |
+        if [[ "${{ runner.os }}" == "Windows" ]]; then
+          echo "EXE_NAME=enterance.exe" >> $GITHUB_ENV
+        else
+          echo "EXE_NAME=enterance" >> $GITHUB_ENV
+        fi
+      shell: bash
+    - name: Upload
+      uses: actions/upload-artifact@v4
+      with:
+        name: enterance-${{ matrix.os }}
+        path: target/release/${{ env.EXE_NAME }}
