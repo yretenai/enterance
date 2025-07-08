@@ -20,6 +20,8 @@ pub struct Config {
 	pub update: String,
 	pub login: String,
 	pub world: String,
+	pub path: Option<String>,
+	pub lang: Option<String>,
 }
 
 impl Config {
@@ -28,6 +30,8 @@ impl Config {
 			update: "".to_string(),
 			login: "".to_string(),
 			world: "".to_string(),
+			path: Some("Binaries/TERA.exe".to_string()),
+			lang: Some("EUR".to_string()),
 		}
 	}
 }
@@ -62,17 +66,17 @@ pub struct LoginResponse {
 	#[serde(rename = "Msg")]
 	pub msg: String,
 	#[serde(rename = "CharacterCount")]
-	pub character_count: String,
+	pub character_count: Option<String>,
 	#[serde(rename = "Permission")]
-	pub permission: i32,
+	pub permission: Option<i32>,
 	#[serde(rename = "Privilege")]
-	pub privilege: i32,
+	pub privilege: Option<i32>,
 	#[serde(rename = "UserNo")]
-	pub user_no: i32,
+	pub user_no: Option<i32>,
 	#[serde(rename = "UserName")]
-	pub user_name: String,
+	pub user_name: Option<String>,
 	#[serde(rename = "AuthKey")]
-	pub auth_key: String,
+	pub auth_key: Option<String>,
 }
 
 #[derive(Hash, PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]

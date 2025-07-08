@@ -25,7 +25,8 @@ use std::slice;
 pub async fn launch(exe_path: PathBuf) -> Result<i32> {
 	let client = reqwest::Client::new();
 
-	let req = client.get(get_config()?.world);
+	let config = get_config()?;
+	let req = client.get(config.world);
 	let res = req.send().await?;
 
 	let server_path = get_server_path()?;
@@ -35,7 +36,7 @@ pub async fn launch(exe_path: PathBuf) -> Result<i32> {
 
 	tokio::task::spawn_blocking(move || create_and_run_game_window());
 
-	let mut child = Command::new(exe_path).arg("-LANGUAGEEXT=EUR".to_string()).spawn()?;
+	let mut child = Command::new(exe_path).arg(format!("-LANGUAGEEXT={}", config.lang.unwrap_or("EUR".to_string())).to_string()).spawn()?;
 
 	let pid = child.id();
 	println!("Game process spawned with PID: {}", pid);
@@ -296,14 +297,14 @@ fn handle_game_crash(payload: &[u8]) {
 }
 
 fn handle_account_name_request(recipient: WPARAM, sender: HWND) {
-	let account_name = load_auth_from_disk().expect("Failed to load auth from disk").user_no;
+	let account_name = load_auth_from_disk().expect("Failed to load auth from disk").user_no.expect("No user no");
 	println!("Account Name Request - Sending: {}", account_name);
 	let account_name_utf16: Vec<u8> = account_name.to_string().encode_utf16().flat_map(|c| c.to_le_bytes().to_vec()).collect();
 	send_response_message(recipient, sender, S1Event::AccountNameResponse, &account_name_utf16);
 }
 
 fn handle_session_ticket_request(recipient: WPARAM, sender: HWND) {
-	let session_ticket = load_auth_from_disk().expect("Failed to load auth from disk").auth_key;
+	let session_ticket = load_auth_from_disk().expect("Failed to load auth from disk").auth_key.expect("No auth key");
 	println!("Session Ticket Request - Sending: {}", session_ticket);
 	send_response_message(recipient, sender, S1Event::SessionTicketResponse, &session_ticket.into_bytes());
 }

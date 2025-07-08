@@ -9,9 +9,12 @@ use crate::util::*;
 
 use anyhow::Result;
 
+use serde::Serialize;
+use serde_json::Serializer;
 use std::env::args;
 use std::fs::{File, exists};
 use std::io::Write;
+use std::process::exit;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -91,7 +94,7 @@ async fn main() -> Result<()> {
 	}
 
 	#[cfg(target_os = "windows")]
-	game::launch(get_my_dir()?.join("Binaries/TERA.exe")).await?;
+	game::launch(get_my_dir()?.join(get_config()?.path.unwrap_or("Binaries/TERA.exe".to_string()))).await?;
 
 	Ok(())
 }
@@ -102,11 +105,18 @@ async fn login(username: String, password: String) -> Result<()> {
 	let req = client.post(get_config()?.login);
 	let res = req.form(&vec![("login", username), ("password", password)]).send().await?;
 
+	let json: LoginResponse = res.json().await?;
+	if !json.return_value {
+		eprintln!("Invalid login! {} {}", json.return_code, json.msg);
+		exit(1);
+	}
+
 	let token_path = get_login_token_path()?;
 	println!("Saving {:?}", token_path);
 
-	let mut file = File::create(token_path)?;
-	file.write_all(res.bytes().await?.as_ref())?;
+	let file = File::create(token_path)?;
+	let mut serialize = Serializer::new(file);
+	json.serialize(&mut serialize)?;
 
 	Ok(())
 }
