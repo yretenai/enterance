@@ -7,7 +7,7 @@ mod util;
 
 use crate::util::*;
 
-use anyhow::Result;
+use anyhow::{Result, Error};
 
 use serde::Serialize;
 use serde_json::Serializer;
@@ -15,6 +15,8 @@ use std::env::args;
 use std::fs::{File, exists};
 use std::io::Write;
 use std::process::exit;
+
+const MAX_RETRIES: u8 = 3;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -81,8 +83,20 @@ async fn main() -> Result<()> {
 
 			println!("Downloading {:?} -> {:?}", info.path, info.hash);
 
-			let req = client.get(info.url.clone());
-			let res = req.send().await?;
+			let mut retries = MAX_RETRIES;
+			let res = loop {
+				let req = client.get(info.url.clone());
+				match req.send().await {
+					Ok(req) => break req,
+					Err(e) => {
+						if retries < 1 {
+							return Err(Error::new(e));
+						}
+						println!("Download failed, retrying {} more times...", retries);
+					}
+				}
+				retries -= 1;
+			};
 			let mut file = File::create(target_file)?;
 			file.write_all(res.bytes().await?.as_ref())?;
 			local_cache.insert(info.path.clone(), info.hash.clone());
