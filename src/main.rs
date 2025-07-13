@@ -66,13 +66,11 @@ async fn main() -> Result<()> {
 				if existing.eq_ignore_ascii_case(&info.hash) {
 					continue;
 				}
-			} else {
-				if exists(&target_file)? {
-					let local_hash = calculate_file_hash(&target_file)?;
-					if local_hash.eq_ignore_ascii_case(&info.hash) {
-						local_cache.insert(info.path.clone(), local_hash);
-						continue;
-					}
+			} else if exists(&target_file)? {
+				let local_hash = calculate_file_hash(&target_file)?;
+				if local_hash.eq_ignore_ascii_case(&info.hash) {
+					local_cache.insert(info.path.clone(), local_hash);
+					continue;
 				}
 			}
 
