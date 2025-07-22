@@ -1,6 +1,6 @@
 [package]
 name = "enterance"
-version = "0.1.3"
+version = "1.0.3"
 edition = "2024"
 
 [dependencies]
