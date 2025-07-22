@@ -244,7 +244,7 @@ unsafe extern "system" fn wnd_proc(h_wnd: HWND, msg: UINT, w_param: WPARAM, l_pa
 			} else {
 				&[]
 			};
-			println!("RX Event: {:?} ({:?}), Payload: {:02x?}", event_id, copy_data.dwData, payload);
+			println!("RX Event: {:?} ({:?})", event_id, copy_data.dwData);
 
 			match event_id {
 				S1Event::AccountNameRequest => handle_account_name_request(w_param, h_wnd),
@@ -298,14 +298,14 @@ fn handle_game_crash(payload: &[u8]) {
 
 fn handle_account_name_request(recipient: WPARAM, sender: HWND) {
 	let account_name = load_auth_from_disk().expect("Failed to load auth from disk").user_no.expect("No user no");
-	println!("Account Name Request - Sending: {}", account_name);
+	println!("Account Name Request");
 	let account_name_utf16: Vec<u8> = account_name.to_string().encode_utf16().flat_map(|c| c.to_le_bytes().to_vec()).collect();
 	send_response_message(recipient, sender, S1Event::AccountNameResponse, &account_name_utf16);
 }
 
 fn handle_session_ticket_request(recipient: WPARAM, sender: HWND) {
 	let session_ticket = load_auth_from_disk().expect("Failed to load auth from disk").auth_key.expect("No auth key");
-	println!("Session Ticket Request - Sending: {}", session_ticket);
+	println!("Session Ticket Request");
 	send_response_message(recipient, sender, S1Event::SessionTicketResponse, &session_ticket.into_bytes());
 }
 
@@ -419,7 +419,7 @@ fn create_and_run_game_window() {
 
 fn send_response_message(recipient: WPARAM, sender: HWND, game_event: S1Event, payload: &[u8]) {
 	let op: usize = game_event.into();
-	println!("TX Event: {:?} ({:?}), Payload: {:02x?}", game_event, op, payload);
+	println!("TX Event: {:?} ({:?})", game_event, op);
 	let copy_data = COPYDATASTRUCT {
 		dwData: op,
 		cbData: payload.len() as u32,
