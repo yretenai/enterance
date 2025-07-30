@@ -1,5 +1,6 @@
 // largely based off tera-rust-launcher
 
+use crate::config::ConfigManager;
 use crate::util::*;
 
 use anyhow::Result;
@@ -16,6 +17,7 @@ use bytemuck::{ByteEq, ByteHash, Pod, Zeroable, try_cast_slice};
 use std::ffi::OsStr;
 use std::fs::{File, remove_file};
 use std::io::Write;
+use std::mem::size_of;
 use std::os::windows::ffi::OsStrExt;
 use std::path::PathBuf;
 use std::process::Command;
@@ -25,7 +27,8 @@ use std::slice;
 pub async fn launch(exe_path: PathBuf) -> Result<i32> {
 	let client = reqwest::Client::new();
 
-	let config = get_config()?;
+	let config = ConfigManager::load()?;
+	let language = config.language();
 	let req = client.get(config.world);
 	let res = req.send().await?;
 
@@ -36,7 +39,7 @@ pub async fn launch(exe_path: PathBuf) -> Result<i32> {
 
 	tokio::task::spawn_blocking(move || create_and_run_game_window());
 
-	let mut child = Command::new(exe_path).arg(format!("-LANGUAGEEXT={}", config.lang.unwrap_or("EUR".to_string())).to_string()).spawn()?;
+	let mut child = Command::new(exe_path).arg(format!("-LANGUAGEEXT={}", language)).spawn()?;
 
 	let pid = child.id();
 	println!("Game process spawned with PID: {}", pid);
@@ -278,8 +281,9 @@ fn handle_game_exit(payload: &[u8]) -> Result<()> {
 
 	match reason {
 		S1ExitReason::InvalidSession => {
-			println!("session is invalid, deleting auth file!");
-			remove_file(get_login_token_path()?)?;
+			println!("session is invalid, clearing auth!");
+			// Remove auth file if it exists
+			let _ = remove_file(get_login_token_path()?);
 		}
 		_ => {}
 	}
@@ -297,14 +301,16 @@ fn handle_game_crash(payload: &[u8]) {
 }
 
 fn handle_account_name_request(recipient: WPARAM, sender: HWND) {
-	let account_name = load_auth_from_disk().expect("Failed to load auth from disk").user_no.expect("No user no");
+	let auth = load_auth_from_disk().expect("Failed to load auth");
+	let account_name = auth.user_no.expect("No user no");
 	println!("Account Name Request");
 	let account_name_utf16: Vec<u8> = account_name.to_string().encode_utf16().flat_map(|c| c.to_le_bytes().to_vec()).collect();
 	send_response_message(recipient, sender, S1Event::AccountNameResponse, &account_name_utf16);
 }
 
 fn handle_session_ticket_request(recipient: WPARAM, sender: HWND) {
-	let session_ticket = load_auth_from_disk().expect("Failed to load auth from disk").auth_key.expect("No auth key");
+	let auth = load_auth_from_disk().expect("Failed to load auth");
+	let session_ticket = auth.auth_key.expect("No auth key");
 	println!("Session Ticket Request");
 	send_response_message(recipient, sender, S1Event::SessionTicketResponse, &session_ticket.into_bytes());
 }

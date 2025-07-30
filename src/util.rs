@@ -15,91 +15,100 @@ use std::fs::File;
 use std::io::{Read, Write, stdin, stdout};
 use std::path::{Path, PathBuf};
 
-#[derive(Hash, PartialEq, Eq, Clone, Debug, Deserialize, Serialize)]
-pub struct Config {
-	pub update: String,
-	pub login: String,
-	pub world: String,
-	pub path: Option<String>,
-	pub lang: Option<String>,
-}
-
-impl Config {
-	pub(crate) fn new() -> Self {
-		Config {
-			update: "".to_string(),
-			login: "".to_string(),
-			world: "".to_string(),
-			path: Some("Binaries/TERA.exe".to_string()),
-			lang: Some("EUR".to_string()),
-		}
-	}
-}
-
+/// JSON representation of server list from the API
 #[derive(Hash, PartialEq, Eq, Clone, Debug, Deserialize, Serialize)]
 struct ServerListJSON {
+	/// Sorting criterion for server list
 	pub sort_criterion: Option<u32>,
+	/// List of available servers
 	pub servers: Vec<ServerInfoJSON>,
 }
 
+/// JSON representation of individual server information
 #[derive(Hash, PartialEq, Eq, Clone, Debug, Deserialize, Serialize)]
 struct ServerInfoJSON {
+	/// Unique server identifier
 	pub id: u32,
+	/// Server display name
 	pub name: String,
+	/// Server category/type
 	pub category: String,
+	/// Server title/description
 	pub title: String,
+	/// Queue status information
 	pub queue: String,
+	/// Server population status
 	pub population: Option<String>,
+	/// Server IP address
 	pub address: Option<String>,
+	/// Server port number
 	pub port: u32,
+	/// Server availability status (1 = available, 0 = unavailable)
 	pub available: u32,
+	/// Message displayed when server is unavailable
 	pub unavailable_message: String,
+	/// Alternative hostname for connection
 	pub host: Option<String>,
 }
 
+/// Authentication response from the login API
 #[derive(Hash, PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
 pub struct LoginResponse {
+	/// Whether authentication was successful
 	#[serde(rename = "Return")]
 	pub return_value: bool,
+	/// Numeric return code (0 = success)
 	#[serde(rename = "ReturnCode")]
 	pub return_code: i32,
+	/// Human-readable message
 	#[serde(rename = "Msg")]
 	pub msg: String,
+	/// Number of characters on account
 	#[serde(rename = "CharacterCount")]
 	pub character_count: Option<String>,
+	/// User permission level
 	#[serde(rename = "Permission")]
 	pub permission: Option<i32>,
+	/// User privilege level
 	#[serde(rename = "Privilege")]
 	pub privilege: Option<i32>,
+	/// Unique user identifier
 	#[serde(rename = "UserNo")]
 	pub user_no: Option<i32>,
+	/// Account username
 	#[serde(rename = "UserName")]
 	pub user_name: Option<String>,
+	/// Authentication token for subsequent requests
 	#[serde(rename = "AuthKey")]
 	pub auth_key: Option<String>,
 }
 
+/// Information about a single file in the update manifest
 #[derive(Hash, PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
 pub struct FileInfo {
+	/// Relative path to the file from game directory
 	pub path: String,
+	/// SHA256 hash of the file contents
 	pub hash: String,
+	/// File size in bytes
 	pub size: u64,
+	/// Download URL for the file
 	pub url: String,
 }
 
+/// Update manifest containing all files that should be present
 #[derive(Hash, PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
 pub struct HashFile {
+	/// List of all files in the game installation
 	pub files: Vec<FileInfo>,
 }
 
-pub fn get_config() -> Result<Config> {
-	let config_path = get_config_path()?;
-	let mut file = File::open(config_path).expect("enterance.ini not found!");
-	let mut contents = String::new();
-	file.read_to_string(&mut contents)?;
-	Ok(toml::from_str(&contents)?)
-}
-
+/// Get the launcher installation directory
+///
+/// Returns the directory containing the launcher executable, which is used
+/// as the base directory for all game files and configuration.
+///
+/// Can be overridden by setting the ENTERANCE_PATH environment variable.
 pub fn get_my_dir() -> Result<PathBuf> {
 	if let Ok(path) = env::var("ENTERANCE_PATH") {
 		return Ok(PathBuf::from(path));
@@ -108,23 +117,41 @@ pub fn get_my_dir() -> Result<PathBuf> {
 	Ok(env::current_exe()?.parent().unwrap_or(env::current_dir()?.as_path()).to_path_buf())
 }
 
+/// Get the path to the file hash cache
+///
+/// Returns the path where file hashes are cached to avoid recalculating
+/// them on every launcher run.
 pub fn get_cache_file_path() -> Result<PathBuf> {
 	Ok(get_my_dir()?.join("cache"))
 }
 
+/// Get the path to the authentication token file
+///
+/// Returns the path where authentication tokens are stored as a fallback
+/// when secure storage is not available.
 pub fn get_login_token_path() -> Result<PathBuf> {
 	Ok(get_my_dir()?.join("auth"))
 }
 
+/// Get the path to the configuration file
+///
+/// Returns the path to the enterance.ini configuration file.
 pub fn get_config_path() -> Result<PathBuf> {
 	Ok(get_my_dir()?.join("enterance.ini"))
 }
 
+/// Get the path to the server list cache (Windows only)
+///
+/// Returns the path where the server list is cached locally.
 #[cfg(target_os = "windows")]
 pub fn get_server_path() -> Result<PathBuf> {
 	Ok(get_my_dir()?.join("server"))
 }
 
+/// Load file hash cache from disk
+///
+/// Loads the cached file hashes to avoid recalculating them on every run.
+/// Returns an empty HashMap if no cache file exists.
 pub fn load_cache_from_disk() -> Result<HashMap<String, String>> {
 	let cache_path = get_cache_file_path()?;
 	if !cache_path.exists() {
@@ -138,6 +165,12 @@ pub fn load_cache_from_disk() -> Result<HashMap<String, String>> {
 	Ok(cache)
 }
 
+/// Write file hash cache to disk
+///
+/// Saves the current file hash cache to disk for use in subsequent runs.
+///
+/// # Arguments
+/// * `hashes` - HashMap mapping file paths to their SHA256 hashes
 pub fn write_cache_to_disk(hashes: HashMap<String, String>) -> Result<()> {
 	let cache_path = get_cache_file_path()?;
 	let file = File::create(cache_path)?;
@@ -146,6 +179,10 @@ pub fn write_cache_to_disk(hashes: HashMap<String, String>) -> Result<()> {
 	Ok(())
 }
 
+/// Load authentication token from disk (Windows only)
+///
+/// Reads the authentication token from the local file for use with
+/// the game client on Windows.
 #[cfg(target_os = "windows")]
 pub fn load_auth_from_disk() -> Result<LoginResponse> {
 	let cache_path = get_login_token_path()?;
@@ -177,9 +214,7 @@ fn parse_server_list_json(server_json: &ServerListJSON) -> Result<ServerList> {
 			port: server.port,
 			available: server.available,
 			unavailable_message: utf16_to_bytes(&server.unavailable_message),
-			host:
-				if server.address.is_some() || server.host.is_none() { None }
-				else { Some(utf16_to_bytes_opt(server.host.clone())) },
+			host: if server.address.is_some() || server.host.is_none() { None } else { Some(utf16_to_bytes_opt(server.host.clone())) },
 		};
 		server_list.servers.push(server_info);
 	}
@@ -200,13 +235,42 @@ pub fn load_server_from_disk() -> Result<Vec<u8>> {
 	Ok(buf)
 }
 
+/// Read a line of input from stdin with validation
+///
+/// Reads user input from stdin and validates it for security:
+/// - Maximum length of 255 characters
+/// - No control characters except tabs
+///
+/// # Returns
+/// The trimmed input string
 pub fn read_line() -> Result<String> {
 	stdout().flush()?;
 	let mut line = String::new();
 	stdin().read_line(&mut line)?;
-	Ok(line.trim().to_string())
+	let trimmed = line.trim().to_string();
+
+	// Basic input validation
+	if trimmed.len() > 255 {
+		return Err(anyhow::anyhow!("Input too long (max 255 characters)"));
+	}
+
+	// Check for control characters (except space and printable ASCII)
+	if trimmed.chars().any(|c| c.is_control() && c != '\t') {
+		return Err(anyhow::anyhow!("Input contains invalid control characters"));
+	}
+
+	Ok(trimmed)
 }
 
+/// Calculate SHA256 hash of a file
+///
+/// Reads the file in chunks and calculates its SHA256 hash for integrity verification.
+///
+/// # Arguments
+/// * `path` - Path to the file to hash
+///
+/// # Returns
+/// Hexadecimal string representation of the SHA256 hash
 pub(crate) fn calculate_file_hash<P: AsRef<Path>>(path: P) -> Result<String> {
 	let mut file = File::open(path)?;
 	let mut hasher = Sha256::new();
@@ -221,7 +285,7 @@ pub(crate) fn calculate_file_hash<P: AsRef<Path>>(path: P) -> Result<String> {
 	}
 
 	let result = hasher.finalize();
-	Ok(format!("{:x}", result))
+	Ok(format!("{result:x}"))
 }
 
 #[cfg(target_os = "windows")]
